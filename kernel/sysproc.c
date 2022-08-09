@@ -71,6 +71,7 @@ sys_sleep(void)
     }
     sleep(&ticks, &tickslock);
   }
+
   release(&tickslock);
   return 0;
 }
@@ -80,7 +81,32 @@ sys_sleep(void)
 int
 sys_pgaccess(void)
 {
-  // lab pgtbl: your code here.
+    // lab pgtbl: your code here.
+    uint64 starting_add;
+    int nums;
+    uint64 p_mask;
+    //get args
+    if(argaddr(0, &starting_add) < 0)
+        return -1;
+    if(argint(1, &nums) < 0)
+        return -1;
+    if(nums>64 || nums<1){
+        return -1;
+    }
+    if(argaddr(2, &p_mask) < 0)
+        return -1;
+    //检查
+    uint64 mask=0;
+    pagetable_t pagetable = myproc()->pagetable;
+    for (int i = 0; i < nums; ++i) {
+        pte_t* pte=walk(pagetable, starting_add,0);
+        if(*pte && ((*pte) & PTE_A)){
+            mask+=1L << i;
+        }
+        *pte=(*pte) & (~PTE_A);//清空PTE_A
+        starting_add+=PGSIZE;
+    }
+    copyout(pagetable,p_mask,(char *)&mask,sizeof (mask));
   return 0;
 }
 #endif
