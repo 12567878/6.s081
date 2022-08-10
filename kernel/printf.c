@@ -122,6 +122,7 @@ panic(char *s)
   printf(s);
   printf("\n");
   panicked = 1; // freeze uart output from other CPUs
+  backtrace();
   for(;;)
     ;
 }
@@ -131,4 +132,22 @@ printfinit(void)
 {
   initlock(&pr.lock, "pr");
   pr.locking = 1;
+}
+
+void backtrace(void){
+    uint64 fp = r_fp();
+    uint64 return_add=*(uint64*)(fp-8);
+    uint64 prev_fp=*(uint64*)(fp-16);
+
+    uint64 stack_top=PGROUNDDOWN(fp);
+    uint64 stack_bottom=PGROUNDUP(fp);
+    if(fp-16<stack_top) printf("backtrace: stackoverflow\n");
+
+    while(1){
+        printf("%p\n",return_add);
+        fp=prev_fp;
+        if(fp>=stack_bottom)break;//在进程栈底则已经到最后了
+        return_add=*(uint64*)(fp-8);
+        prev_fp=*(uint64*)(fp-16);
+    }
 }
