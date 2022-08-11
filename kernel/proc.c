@@ -141,6 +141,10 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
+  //Set up arguments for alarm
+  p->ticks=0;
+  p->ntick=0;
+  p->handler=(void(*)())MAXVA+1;//先填写非法值，之后用户来填写
   return p;
 }
 

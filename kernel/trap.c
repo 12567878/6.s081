@@ -77,8 +77,16 @@ usertrap(void)
     exit(-1);
 
   // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2)
-    yield();
+  if(which_dev == 2)//在这里增加tick
+  {
+      p->ticks+=1;
+      if(p->ntick>0 && (p->ticks % p->ntick) == 0){
+          p->handler();
+      }
+      yield();
+  }
+
+
 
   usertrapret();
 }
