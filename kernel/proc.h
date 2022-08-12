@@ -110,4 +110,28 @@ struct proc {
   uint64 ticks;
   uint64 ntick;
   void(*handler)(void);
+
+
+//  struct trapframe trapframe1;
+  uint64 a0;
+  uint64 a1;
+  uint64 a2;
+  uint64 a3;
+  uint64 a4;
+  uint64 a5;
+  uint64 a6;
+  uint64 a7;
+  uint64 t0;
+  uint64 t1;
+  uint64 t2;
+  uint64 t3;
+  uint64 t4;
+  uint64 t5;
+  uint64 t6;
+  uint64 epc;
+  uint64 ra;
+  uint64 s0;
+  uint64 sp;
+
+  volatile int* handling;
 };

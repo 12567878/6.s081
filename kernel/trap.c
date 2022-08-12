@@ -8,6 +8,7 @@
 
 struct spinlock tickslock;
 uint ticks;
+volatile static int handling=0;
 
 extern char trampoline[], uservec[], userret[];
 
@@ -79,14 +80,38 @@ usertrap(void)
   // give up the CPU if this is a timer interrupt.
   if(which_dev == 2)//在这里增加tick
   {
-      p->ticks+=1;
-      if(p->ntick>0 && (p->ticks % p->ntick) == 0){
-          p->handler();
-      }
+
+      if(p->ntick>0)p->ticks+=1;
       yield();
+      if(handling==0 && p->ntick>0 && (p->ticks % p->ntick) == 0){
+          p->handling=&handling;
+          handling=1;
+
+          p->a0=p->trapframe->a0;
+          p->a1=p->trapframe->a1;
+          p->a2=p->trapframe->a2;
+          p->a3=p->trapframe->a3;
+          p->a4=p->trapframe->a4;
+          p->a5=p->trapframe->a5;
+          p->a6=p->trapframe->a6;
+          p->a7=p->trapframe->a7;
+
+          p->t0=p->trapframe->t0;
+          p->t1=p->trapframe->t1;
+          p->t2=p->trapframe->t2;
+          p->t3=p->trapframe->t3;
+          p->t4=p->trapframe->t4;
+          p->t5=p->trapframe->t5;
+          p->t6=p->trapframe->t6;
+
+          p->epc=p->trapframe->epc;
+          p->ra=p->trapframe->ra;
+          p->s0=p->trapframe->s0;
+          p->sp=p->trapframe->sp;
+
+          p->trapframe->epc=(uint64)p->handler;
+      }
   }
-
-
 
   usertrapret();
 }
@@ -132,6 +157,7 @@ usertrapret(void)
   // jump to trampoline.S at the top of memory, which 
   // switches to the user page table, restores user registers,
   // and switches to user mode with sret.
+
   uint64 fn = TRAMPOLINE + (userret - trampoline);
   ((void (*)(uint64,uint64))fn)(TRAPFRAME, satp);
 }

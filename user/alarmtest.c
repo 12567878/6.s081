@@ -42,6 +42,7 @@ periodic()
 void
 test0()
 {
+//    periodic();
   int i;
   printf("test0 start\n");
   count = 0;
@@ -86,6 +87,7 @@ test1()
   j = 0;
   sigalarm(2, periodic);
   for(i = 0; i < 500000000; i++){
+//      periodic();
     if(count >= 10)
       break;
     foo(i, &j);

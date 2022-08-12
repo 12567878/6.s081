@@ -118,11 +118,12 @@ void
 panic(char *s)
 {
   pr.locking = 0;
+  backtrace();
   printf("panic: ");
   printf(s);
   printf("\n");
   panicked = 1; // freeze uart output from other CPUs
-  backtrace();
+
   for(;;)
     ;
 }
@@ -142,7 +143,7 @@ void backtrace(void){
     uint64 stack_top=PGROUNDDOWN(fp);
     uint64 stack_bottom=PGROUNDUP(fp);
     if(fp-16<stack_top) printf("backtrace: stackoverflow\n");
-
+    printf("-------track-------\n");
     while(1){
         printf("%p\n",return_add);
         fp=prev_fp;
@@ -150,4 +151,5 @@ void backtrace(void){
         return_add=*(uint64*)(fp-8);
         prev_fp=*(uint64*)(fp-16);
     }
+    printf("-------track-------\n");
 }
