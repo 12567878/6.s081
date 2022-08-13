@@ -11,6 +11,8 @@ uint ticks;
 
 extern char trampoline[], uservec[], userret[];
 
+
+
 // in kernelvec.S, calls kerneltrap().
 void kernelvec();
 
@@ -67,6 +69,55 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
+  } else if(r_scause()==15){//store page fault
+      uint64 addr = r_stval();
+      pte_t *pte;
+      uint64 pa;
+      uint flags;
+      char *mem;
+      pagetable_t pagetable=p->pagetable;
+      if((pte = walk(pagetable,addr,0))==0){
+          panic("usertrap: pte should exist");
+      }
+
+      if((*pte & PTE_V)==0){
+          panic("usertrap: pte should exist");
+      }
+      if((*pte & PTE_COW)==0){
+//          panic("usertrap: PTE_COW should exist");
+//          printf("no COW\n");
+          printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
+          printf("            sepc=%p stval=%p pte=%p\n", r_sepc(), r_stval(),*pte);
+          printf("-----pagetable------\n");
+          vmprint(pagetable);
+          printf("-----pagetable------\n");
+          exit(-1);
+      }
+
+      pa = PTE2PA(*pte);
+      if(refer_num(pa)==1){
+          *pte = *pte | PTE_W;
+          *pte = *pte & (~PTE_COW);
+      } else{
+          mem=kalloc();
+          if(mem==0) {
+              printf("trap:not enough mem,exit\n");
+
+              exit(-1);
+          }
+          memmove(mem, (char*)pa, PGSIZE);
+          flags = PTE_FLAGS(*pte);
+          flags = flags | PTE_W;
+          flags = flags & (PTE_COW);
+          uint64 pg_addr= PGROUNDDOWN(addr);
+          uvmunmap(pagetable,pg_addr,1,1);
+          if(mappages(pagetable,pg_addr,PGSIZE,(uint64)mem,flags)!=0){
+              panic("trap: map unsucceed\n");
+          }
+//          add_refer_num(pa,-1);
+//          p->trapframe->epc-=4;
+//          usertrapret();
+      }
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());

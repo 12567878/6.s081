@@ -5,6 +5,8 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "spinlock.h"
+#include "proc.h"
 
 /*
  * the kernel's page table.
@@ -14,6 +16,9 @@ pagetable_t kernel_pagetable;
 extern char etext[];  // kernel.ld sets this to end of kernel code.
 
 extern char trampoline[]; // trampoline.S
+
+
+
 
 // Make a direct-map page table for the kernel.
 pagetable_t
@@ -310,15 +315,22 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
       panic("uvmcopy: pte should exist");
     if((*pte & PTE_V) == 0)
       panic("uvmcopy: page not present");
+//    *pte = *pte & (~PTE_W);//取消写；
+
+//    *pte = *pte | PTE_COW;
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
+
+    //不复制
     if((mem = kalloc()) == 0)
       goto err;
     memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
+
+    if(mappages(new, i, PGSIZE, pa, flags) != 0){
       goto err;
     }
+//      add_refer_num(pa,1);
+
   }
   return 0;
 
@@ -348,11 +360,50 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 {
   uint64 n, va0, pa0;
 
+    pte_t *pte;
+    uint flags;
+    char *mem;
+
+
   while(len > 0){
-    va0 = PGROUNDDOWN(dstva);
-    pa0 = walkaddr(pagetable, va0);
-    if(pa0 == 0)
-      return -1;
+      va0 = PGROUNDDOWN(dstva);
+      pa0 = walkaddr(pagetable, va0);
+      if(pa0 == 0)
+          return -1;
+
+
+      if((pte = walk(pagetable,va0,0))==0){
+          panic("copyout: pte should exist");
+      }
+
+      if((*pte & PTE_V)==0){
+          panic("copyout: pte should exist");
+      }
+
+      if((*pte & PTE_COW)!=0){
+          if(refer_num(pa0)==1){
+              *pte = *pte | PTE_W;
+              *pte = *pte & (~PTE_COW);
+          } else {
+              mem = kalloc();
+              if(mem==0){
+                  printf("copyout: not enough mem,exit\n");
+                  exit(-1);
+              }
+              memmove(mem, (char *) pa0, PGSIZE);
+              flags = PTE_FLAGS(*pte);
+              flags = flags | PTE_W;
+              flags = flags & (~PTE_COW);
+              uvmunmap(pagetable,va0,1,1);
+              if (mappages(pagetable, va0, PGSIZE, (uint64) mem, flags) != 0) {
+                  panic("trap: map unsucceed\n");
+              }
+          }
+      }
+
+
+
+
     n = PGSIZE - (dstva - va0);
     if(n > len)
       n = len;
@@ -431,4 +482,31 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+
+void
+vmprint(pagetable_t pagetable){
+// there are 2^9 = 512 PTEs in a page table.
+    printf("page table %p\n",pagetable);
+    for(int i = 0; i < 512; i++){
+        pte_t pte1 = pagetable[i];
+        if((pte1 & PTE_V) != 0){
+            printf("..%d: pte %p PTE_COW %d pa %p\n",i,pte1,pte1 & PTE_COW,PTE2PA(pte1));
+            pagetable_t pagetable2 = (pagetable_t)PTE2PA(pte1);
+            for (int j = 0; j < 512; ++j) {
+                pte_t pte2=pagetable2[j];
+                if((pte2 & PTE_V) != 0){
+                    printf("....%d: pte %p PTE_COW %d pa %p\n",j,pte2,pte2 & PTE_COW,PTE2PA(pte2));
+                    pagetable_t pagetable3 = (pagetable_t)PTE2PA(pte2);
+                    for (int k = 0; k < 512; ++k) {
+                        pte_t pte3=pagetable3[k];
+                        if((pte3 & PTE_V) != 0){
+                            printf("......%d: pte %p PTE_COW %d pa %p refer_num %d\n",k,pte3,pte1 & PTE_COW,PTE2PA(pte3),
+                                   refer_num(PTE2PA(pte3)));
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

@@ -23,7 +23,13 @@ static struct {
   int locking;
 } pr;
 
+
+
+
 static char digits[] = "0123456789abcdef";
+
+
+
 
 static void
 printint(int xx, int base, int sign)
@@ -121,7 +127,9 @@ panic(char *s)
   printf("panic: ");
   printf(s);
   printf("\n");
+
   panicked = 1; // freeze uart output from other CPUs
+
   for(;;)
     ;
 }
@@ -132,3 +140,4 @@ printfinit(void)
   initlock(&pr.lock, "pr");
   pr.locking = 1;
 }
+
