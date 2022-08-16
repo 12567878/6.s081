@@ -5,8 +5,6 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
-#include "spinlock.h"
-#include "proc.h"
 
 /*
  * the kernel's page table.
@@ -156,6 +154,7 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
     if(*pte & PTE_V)
       panic("mappages: remap");
     *pte = PA2PTE(pa) | perm | PTE_V;
+    add_refer_num(pa,1);
     if(a == last)
       break;
     a += PGSIZE;
@@ -183,10 +182,11 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
       panic("uvmunmap: not mapped");
     if(PTE_FLAGS(*pte) == PTE_V)
       panic("uvmunmap: not a leaf");
+    uint64 pa = PTE2PA(*pte);
     if(do_free){
-      uint64 pa = PTE2PA(*pte);
+//      uint64 pa = PTE2PA(*pte);
       kfree((void*)pa);
-    }
+    } else add_refer_num(pa,-1);
     *pte = 0;
   }
 }
@@ -217,6 +217,7 @@ uvminit(pagetable_t pagetable, uchar *src, uint sz)
   mem = kalloc();
   memset(mem, 0, PGSIZE);
   mappages(pagetable, 0, PGSIZE, (uint64)mem, PTE_W|PTE_R|PTE_X|PTE_U);
+    add_refer_num((uint64)mem,-1);//多加的减掉
   memmove(mem, src, sz);
 }
 
@@ -244,6 +245,7 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
       uvmdealloc(pagetable, a, oldsz);
       return 0;
     }
+      add_refer_num((uint64)mem,-1);
   }
   return newsz;
 }
@@ -308,23 +310,23 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  char *mem;
+//  char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
       panic("uvmcopy: pte should exist");
     if((*pte & PTE_V) == 0)
       panic("uvmcopy: page not present");
-//    *pte = *pte & (~PTE_W);//取消写；
+    *pte = *pte & (~PTE_W);//取消写；
 
-//    *pte = *pte | PTE_COW;
+    *pte = *pte | PTE_COW;
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
 
     //不复制
-    if((mem = kalloc()) == 0)
-      goto err;
-    memmove(mem, (char*)pa, PGSIZE);
+//    if((mem = kalloc()) == 0)
+//      goto err;
+//    memmove(mem, (char*)pa, PGSIZE);
 
     if(mappages(new, i, PGSIZE, pa, flags) != 0){
       goto err;
@@ -362,12 +364,13 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 
     pte_t *pte;
     uint flags;
-    char *mem;
+    uint64 mem=0;
 
 
   while(len > 0){
       va0 = PGROUNDDOWN(dstva);
       pa0 = walkaddr(pagetable, va0);
+      mem=pa0;
       if(pa0 == 0)
           return -1;
 
@@ -385,19 +388,20 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
               *pte = *pte | PTE_W;
               *pte = *pte & (~PTE_COW);
           } else {
-              mem = kalloc();
+              mem = (uint64)kalloc();
               if(mem==0){
                   printf("copyout: not enough mem,exit\n");
                   exit(-1);
               }
-              memmove(mem, (char *) pa0, PGSIZE);
+              memmove((void *)mem, (char *) pa0, PGSIZE);
               flags = PTE_FLAGS(*pte);
               flags = flags | PTE_W;
               flags = flags & (~PTE_COW);
-              uvmunmap(pagetable,va0,1,1);
+              uvmunmap(pagetable,va0,1,0);
               if (mappages(pagetable, va0, PGSIZE, (uint64) mem, flags) != 0) {
                   panic("trap: map unsucceed\n");
               }
+              add_refer_num((uint64)mem,-1);
           }
       }
 
@@ -407,7 +411,7 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
     n = PGSIZE - (dstva - va0);
     if(n > len)
       n = len;
-    memmove((void *)(pa0 + (dstva - va0)), src, n);
+    memmove((void *)(mem + (dstva - va0)), src, n);//pa0改成mem
 
     len -= n;
     src += n;

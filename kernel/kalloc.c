@@ -5,17 +5,16 @@
 #include "types.h"
 #include "param.h"
 #include "memlayout.h"
-#include "spinlock.h"
 #include "riscv.h"
+#include "spinlock.h"
 #include "defs.h"
 
 void freerange(void *pa_start, void *pa_end);
 
 extern char end[]; // first address after kernel.
                    // defined by kernel.ld.
-volatile static int page_refer_num[(PHYSTOP-KERNBASE)/4096]={0};
+volatile static int page_refer_num[(PHYSTOP)/4096+1]={0};
 
-struct spinlock refer_lock;
 
 struct run {
   struct run *next;
@@ -29,7 +28,10 @@ struct {
 
 int
 i_refer(uint64 pa){
-    return (pa-KERNBASE)/4096;
+
+    if( pa > PHYSTOP) {printf("%p",pa); panic("i_refer:invalid pa\n");
+         }
+    return (pa)/4096;
 }
 
 int
@@ -41,7 +43,6 @@ void
 kinit()
 {
   initlock(&kmem.lock, "kmem");
-    initlock(&refer_lock,"refer");
   freerange(end, (void*)PHYSTOP);
 }
 
@@ -74,7 +75,7 @@ kfree(void *pa)
 
 
   // Fill with junk to catch dangling refs.
-  memset(pa, 1, PGSIZE);
+//  memset(pa, 1, PGSIZE);
   page_refer_num[i]=0;
   r = (struct run*)pa;
 
@@ -103,9 +104,9 @@ kalloc(void)
 
   if(r){
       int i= i_refer((uint64)r);
-      if(page_refer_num[i]!=0){
-          panic("kalloc: refer_num management fault");
-      }
+//      if(page_refer_num[i]!=0){
+//          panic("kalloc: refer_num management fault");
+//      }
       page_refer_num[i]=1;
   }
   return (void*)r;
@@ -116,13 +117,15 @@ kalloc(void)
 //plus大于零给pa引用加1，小于等于0则减一
 void
 add_refer_num(uint64 pa,int plus){
-    acquire(&refer_lock);
     int i = i_refer(pa);
+    if(pa>PHYSTOP)panic("add_refer_num:pa>PHYSTOP");
+//    if(page_refer_num[i]<1) panic("add_refer_num:fault");
     if(plus>0) page_refer_num[i]+=1;
+
     else {
-        panic("don't use");
-//        page_refer_num[i] -= 1;
-//        if(page_refer_num[i]<0) panic("kalloc.c/add_i: refer_num < 0\n");
+//        panic("don't use");
+        page_refer_num[i] -= 1;
+        if(page_refer_num[i]==0) kfree((void *)pa);
+        if(page_refer_num[i]<0) panic("kalloc.c/add_i: refer_num < 0\n");
     }
-    release(&refer_lock);
 }
